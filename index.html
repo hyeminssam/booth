@@ -100,6 +100,15 @@ h2{font-size:1.3rem;margin:28px 0 10px}
 .badge.me{background:var(--berry);color:#fff}
 .badge.lk{background:#eaf1f6;color:var(--muted)}
 .badge.t{background:#e9e4ff;color:#4a3aa8}
+.seat.editing{display:flex;flex-direction:column;align-items:stretch;gap:6px;border-style:solid;border-color:var(--blue);background:#fff;cursor:default}
+.seat.editing input{width:100%;min-width:0;font:inherit;font-size:1.2rem;font-weight:800;padding:8px 10px;border:2px solid var(--line);border-radius:10px;outline:none}
+.seat.editing input:focus{border-color:var(--blue)}
+.seat.editing .eb{display:flex;gap:6px}
+.seat.editing .eb button{flex:1;border:0;border-radius:10px;padding:8px 4px;font-weight:800;font-size:.95rem}
+.seat.editing .ok{background:var(--blue);color:#fff}
+.seat.editing .no{background:#e7f0f6}
+.seat.editing .del{background:var(--berry-soft);color:#8f1d3d}
+.seat.editing .msg{font-size:.82rem;color:var(--berry);font-weight:700;min-height:0}
 .seat.flash{animation:flash 1.2s ease}
 @keyframes flash{0%{box-shadow:0 0 0 0 rgba(31,127,184,.7)}100%{box-shadow:0 0 0 14px rgba(31,127,184,0)}}
 .roster{width:100%;border-collapse:separate;border-spacing:0;background:var(--paper);border-radius:16px;overflow:hidden;box-shadow:var(--shadow);font-size:1.05rem}
@@ -285,6 +294,9 @@ footer{margin-top:30px;text-align:center;font-size:.82rem;color:var(--muted)}
   .seat .who{white-space:normal;word-break:keep-all;overflow-wrap:anywhere;line-height:1.2}
   .seat.empty{font-size:.9rem}
   .seat .badge{display:none}
+  .seat.editing{padding:6px}
+  .seat.editing input{font-size:1rem;padding:6px}
+  .seat.editing .eb{flex-direction:column}
   .seat .long{display:none}
   .tcard h3 .lbl{display:none}
   .tcard h3 .full{font-size:.72rem;padding:2px 7px}
@@ -325,9 +337,17 @@ footer{margin-top:30px;text-align:center;font-size:.82rem;color:var(--muted)}
   <section class="page show" id="p1">
     <div id="lockBanner" class="banner lock" hidden>🔒 선생님이 배정판을 잠갔어요. 바꾸고 싶으면 선생님께 말해 주세요.</div>
     <div class="help">
-      빈칸을 눌러 <b>내 이름</b>을 쓰세요. 내가 쓴 이름은 <b>나만</b> 고치거나 지울 수 있어요.<br>
-      다른 친구 이름은 지울 수 없고, 모든 기록은 선생님께 남아요.
-      <div class="myname">내 이름: <span id="myNameShow">아직 없음</span> <button class="link" id="changeMyName">바꾸기</button></div>
+      원하는 자리의 빈칸을 눌러 <b>바로 내 이름을 쓰고 [✔ 저장]</b>을 누르세요. <b>먼저 쓴 사람이 그 자리</b>예요.<br>
+      내가 쓴 이름은 <b>나만</b> 고치거나 지울 수 있고, 다른 친구 이름은 지울 수 없어요. 모든 기록은 선생님께 남아요.
+    </div>
+    <div id="readErr" class="banner setup" hidden></div>
+    <div class="panel" id="teacherBar" hidden>
+      <div class="row">
+        <strong style="margin-right:auto">🔧 교사</strong>
+        <button class="btn warn" id="resetSeats">🔄 자리 초기화 (이름 모두 지우기)</button>
+        <label class="switch"><input type="checkbox" id="optLock2"> 🔒 잠그기</label>
+      </div>
+      <p class="small" style="margin:8px 0 0">초기화해도 변경 기록은 남아서 [배정판 관리]에서 한 칸씩 되돌릴 수 있어요. 교사는 아무 자리나 눌러 쓰거나 지울 수 있어요.</p>
     </div>
     <div class="shifts" id="shifts"></div>
     <div class="room">
@@ -430,7 +450,7 @@ footer{margin-top:30px;text-align:center;font-size:.82rem;color:var(--muted)}
         <div><button class="btn big" id="lkSend">링크 올리기</button></div>
       </div>
     </div>
-    <h2>🙋 친구들이 올린 링크 <span class="small">— 배정판 이름으로 테이블을 찾아 묶어 보여 줘요</span></h2>
+    <h2>🙋 친구들이 올린 링크 <span class="small">— 이름과 링크가 모두 보여요. [들어가기]를 누르면 함께 편집해요</span></h2>
     <div id="linkList"></div>
   </section>
 
@@ -646,7 +666,7 @@ function renderShifts(){
     const b = el("button","shift"); b.setAttribute("aria-pressed", s === curShift ? "true" : "false");
     b.appendChild(el("strong", null, C.SHIFTS[s] || (s + "부")));
     b.appendChild(el("em", null, "채운 자리 " + filledCount(s) + " / " + (TABLES*SEATS)));
-    b.addEventListener("click", () => { curShift = s; render(); });
+    b.addEventListener("click", () => { curShift = s; editing = null; render(); });
     box.appendChild(b);
   });
 }
@@ -662,6 +682,7 @@ function renderMap(){
     for (let p=1; p<=SEATS; p++){
       const r = slot(curShift,t,p);
       const mine = r.name && myHash && r.owner_hash === myHash;
+      if (editing && editing.k === key(curShift,t,p)){ card.appendChild(editBox(curShift,t,p,r,mine)); continue; }
       const b = el("button","seat " + (r.name ? "filled" : "empty") + (mine ? " mine" : ""));
       if (r.name) b.appendChild(el("span","who", r.name));
       else { const w = el("span","who","+ 이름"); w.appendChild(el("span","long"," 쓰기")); b.appendChild(w); }
@@ -700,8 +721,9 @@ function renderRoster(){
 }
 function render(){
   $("#lockBanner").hidden = !settings.locked;
-  $("#myNameShow").textContent = myName || "아직 없음";
-  renderShifts(); renderMap(); renderRoster(); if (links.length) renderLinks();
+  $("#teacherBar").hidden = !teacherPw;
+  $("#optLock2").checked = !!settings.locked;
+  renderShifts(); if (!editing) renderMap(); renderRoster(); if (links.length) renderLinks();   // 이름 쓰는 중에는 배치도를 다시 그리지 않음
   $("#optVote").checked = settings.votes_open !== false;
   $("#voteClosed").hidden = settings.votes_open !== false;
   $("#optLock").checked = !!settings.locked;
@@ -752,39 +774,67 @@ async function rpc(fn, args){
 }
 function needServer(){ if (!sb){ toast("아직 설치가 끝나지 않았어요."); return true; } return false; }
 
+/* 자리를 누르면 그 자리에서 바로 이름 쓰기 */
+let editing = null;            // { k, value }
 function openSeat(s,t,p){
   if (needServer()) return;
   const r = slot(s,t,p);
-  const where = (C.SHIFTS[s] || s + "부") + " · " + t + "번 테이블 · " + seatLabel(p);
   const mine = r.name && myHash && r.owner_hash === myHash;
-  if (teacherPw){
-    const btns = [{ text:"취소", cls:"sec", run: () => true }];
-    if (r.name) btns.push({ text:"지우기", cls:"danger", run: async () => { await rpc("booth_admin_set",{ p_pw:teacherPw, p_shift:s, p_table:t, p_seat:p, p_name:"" }); await loadAll(); toast("지웠어요."); } });
-    btns.push({ text:"저장", run: async v => { await rpc("booth_admin_set",{ p_pw:teacherPw, p_shift:s, p_table:t, p_seat:p, p_name:v }); await loadAll(); toast("저장했어요."); } });
-    modal({ title:"🔧 교사: 이름 쓰기/고치기", where, value: r.name || "", placeholder:"학생 이름", note:"교사가 쓴 이름은 학생이 고칠 수 없어요.", buttons: btns });
-    return;
+  if (!teacherPw){
+    if (settings.locked){ toast("🔒 배정판이 잠겨 있어요. 바꾸려면 선생님께 말해 주세요."); return; }
+    if (r.name && !mine){ toast(r.name + " 친구가 쓴 자리예요. 바꾸려면 선생님께 말해 주세요."); return; }
   }
-  if (settings.locked){ toast("🔒 배정판이 잠겨 있어요. 바꾸려면 선생님께 말해 주세요."); return; }
-  if (r.name && !mine){ toast(r.name + " 친구가 쓴 자리예요. 바꾸려면 선생님께 말해 주세요."); return; }
-  const btns = [{ text:"취소", cls:"sec", run: () => true }];
-  if (mine) btns.push({ text:"내 이름 지우기", cls:"danger", run: async () => {
-    await rpc("booth_release",{ p_shift:s, p_table:t, p_seat:p, p_token:myToken }); await loadAll(); toast("지웠어요.");
-  }});
-  btns.push({ text: mine ? "고치기" : "저장", run: async v => {
-    const name = (v || "").trim().replace(/\s+/g," ");
-    if (name.length < 2) throw new Error("이름을 2글자 이상 써 주세요.");
-    await rpc("booth_claim",{ p_shift:s, p_table:t, p_seat:p, p_name:name, p_token:myToken });
-    if (!myName || !mine) rememberMe(name);
-    fillIdentity();
-    await loadAll(); toast("✔ " + where + "에 저장했어요!");
-  }});
-  modal({ title: mine ? "내 이름 고치기" : "이 자리에 이름 쓰기", where, value: r.name || myName || "", placeholder:"내 이름 (예: 김과학)",
-    note:"실제 이름을 써요. 한 번 쓰면 다른 친구는 지울 수 없어요.", buttons: btns });
+  editing = { k:key(s,t,p), value: r.name || "" };
+  renderMap();
 }
-$("#changeMyName").addEventListener("click", () => {
-  modal({ title:"내 이름", where:"빈칸을 누를 때 자동으로 들어갈 이름이에요.", value: myName, placeholder:"내 이름",
-    buttons:[{ text:"취소", cls:"sec", run:() => true }, { text:"저장", run: v => { rememberMe((v||"").trim()); fillIdentity(); render(); } }] });
-});
+function closeEdit(){ editing = null; renderMap(); }
+function editBox(s,t,p,r,mine){
+  const box = el("div","seat editing");
+  const inp = el("input"); inp.maxLength = 10; inp.placeholder = teacherPw ? "학생 이름" : "내 이름"; inp.autocomplete = "off";
+  inp.value = editing.value; inp.setAttribute("aria-label", t + "번 테이블 " + seatLabel(p) + " 이름");
+  inp.addEventListener("input", () => { editing.value = inp.value; });
+  const msg = el("div","msg");
+  const eb = el("div","eb");
+  const ok = el("button","ok","✔ 저장"), no = el("button","no","취소");
+  ok.type = no.type = "button";
+  const busy = v => eb.querySelectorAll("button").forEach(x => x.disabled = v);
+  async function save(){
+    const name = inp.value.trim().replace(/\s+/g," ");
+    if (name.length < 2){ msg.textContent = "이름을 2글자 이상 써요."; inp.focus(); return; }
+    busy(true); msg.textContent = "";
+    try {
+      if (teacherPw) await rpc("booth_admin_set",{ p_pw:teacherPw, p_shift:s, p_table:t, p_seat:p, p_name:name });
+      else await rpc("booth_claim",{ p_shift:s, p_table:t, p_seat:p, p_name:name, p_token:myToken });
+      slots[key(s,t,p)] = Object.assign({}, slot(s,t,p), { name, owner_hash: teacherPw ? "teacher" : myHash });   // 바로 보이게
+      if (!teacherPw){ rememberMe(name); fillIdentity(); }
+      lastChanged = key(s,t,p); editing = null; render();
+      toast("✔ " + (C.SHIFTS[s] || s + "부").split("·")[0].trim() + " " + t + "번 테이블에 " + name + " 저장!");
+      loadAll();
+    } catch(e){ msg.textContent = errMsg(e); busy(false); loadAll(); }
+  }
+  ok.addEventListener("click", save);
+  no.addEventListener("click", closeEdit);
+  inp.addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); save(); } if (e.key === "Escape") closeEdit(); });
+  eb.append(ok, no);
+  if (r.name && (mine || teacherPw)){
+    const del = el("button","del","지우기"); del.type = "button";
+    del.addEventListener("click", async () => {
+      if (!confirm(t + "번 테이블의 " + r.name + " 이름을 지울까요?")) return;
+      busy(true);
+      try {
+        if (teacherPw) await rpc("booth_admin_set",{ p_pw:teacherPw, p_shift:s, p_table:t, p_seat:p, p_name:"" });
+        else await rpc("booth_release",{ p_shift:s, p_table:t, p_seat:p, p_token:myToken });
+        slots[key(s,t,p)] = Object.assign({}, slot(s,t,p), { name:null, owner_hash:null });
+        editing = null; render(); toast("지웠어요."); loadAll();
+      } catch(e){ msg.textContent = errMsg(e); busy(false); }
+    });
+    eb.appendChild(del);
+  }
+  box.append(inp, eb, msg);
+  setTimeout(() => { if (document.activeElement !== inp){ inp.focus(); const n = inp.value.length; try { inp.setSelectionRange(n,n); } catch(e){} } }, 30);
+  return box;
+}
+document.addEventListener("keydown", e => { if (e.key === "Escape" && editing) closeEdit(); });
 
 /* =========================================================
    ② 만드는 방법 — QR
@@ -841,39 +891,35 @@ async function loadLinks(){
 function renderLinks(){
   const box = $("#linkList"); box.innerHTML = "";
   if (!links.length){ box.appendChild(el("div","empty","아직 올라온 링크가 없어요.")); return; }
-  const groups = [];
-  for (let t=1;t<=TABLES;t++){ const items = links.filter(l => tablesOfName(l.name).some(x => x.t === t)); if (items.length) groups.push([t + "번 테이블", "🧪", items]); }
-  const none = links.filter(l => !tablesOfName(l.name).length);
-  if (none.length) groups.push(["배정판에 이름이 없는 친구", "🧊", none]);
-  groups.forEach(([title, ico, items]) => {
-    const g = el("div","lgroup"); g.appendChild(el("h3", null, ico + " " + title));
-    items.forEach(l => {
-      const mine = myHash && l.owner_hash === myHash;
-      const it = el("div","litem" + (mine ? " mine" : ""));
-      const info = el("div","info"); info.appendChild(el("strong", null, l.title || "캔바 디자인"));
-      const where = tablesOfName(l.name).map(x => x.s + "부 " + x.t + "번").join(", ");
-      info.appendChild(el("span","small", "올린 사람 " + l.name + (where ? " (" + where + ")" : "") + (mine ? " · 내가 올림" : "")));
-      it.appendChild(info);
-      if (CANVA_RE.test(l.url)){
-        const a = el("a","btn violet","🔗 들어가기"); a.href = l.url; a.target = "_blank"; a.rel = "noopener noreferrer";
-        it.appendChild(a);
-      }
-      if (mine || teacherPw){
-        const d = el("button","btn sec sm","지우기");
-        d.addEventListener("click", async () => {
-          if (!confirm("이 링크를 지울까요?")) return;
-          try {
-            if (teacherPw && !mine) await rpc("booth_admin_link_delete",{ p_pw:teacherPw, p_id:l.id });
-            else await rpc("booth_link_delete",{ p_token:myToken, p_id:l.id });
-            await loadLinks(); toast("지웠어요.");
-          } catch(e){ toast(errMsg(e)); }
-        });
-        it.appendChild(d);
-      }
-      g.appendChild(it);
-    });
-    box.appendChild(g);
+  const g = el("div","lgroup");
+  links.slice().sort((a,b) => b.id - a.id).forEach(l => {          // 최신이 위로, 모두 한 목록에
+    const mine = myHash && l.owner_hash === myHash;
+    const it = el("div","litem" + (mine ? " mine" : ""));
+    const info = el("div","info");
+    info.appendChild(el("strong", null, l.name + (l.title ? " · " + l.title : "")));
+    const u = el("a","small", l.url); u.href = l.url; u.target = "_blank"; u.rel = "noopener noreferrer";
+    u.style.wordBreak = "break-all"; u.style.color = "var(--blue)";
+    if (CANVA_RE.test(l.url)) info.appendChild(u); else info.appendChild(el("span","small", l.url));
+    it.appendChild(info);
+    if (CANVA_RE.test(l.url)){
+      const a = el("a","btn violet","🔗 들어가기"); a.href = l.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      it.appendChild(a);
+    }
+    if (mine || teacherPw){
+      const d = el("button","btn sec sm","지우기");
+      d.addEventListener("click", async () => {
+        if (!confirm("이 링크를 지울까요?")) return;
+        try {
+          if (teacherPw && !mine) await rpc("booth_admin_link_delete",{ p_pw:teacherPw, p_id:l.id });
+          else await rpc("booth_link_delete",{ p_token:myToken, p_id:l.id });
+          await loadLinks(); toast("지웠어요.");
+        } catch(e){ toast(errMsg(e)); }
+      });
+      it.appendChild(d);
+    }
+    g.appendChild(it);
   });
+  box.appendChild(g);
 }
 $("#lkSend").addEventListener("click", async () => {
   if (needServer()) return;
@@ -888,8 +934,7 @@ $("#lkSend").addEventListener("click", async () => {
     rememberMe(name); fillIdentity();
     $("#lkUrl").value = ""; $("#lkTitle").value = "";
     await loadLinks();
-    toast(tablesOfName(name).length ? "✔ 링크를 올렸어요! 친구에게 ③에서 [들어가기]를 누르라고 알려 주세요."
-                                     : "✔ 올렸어요. (① 배정판에 내 이름을 쓰면 테이블별로 묶여 보여요)");
+    toast("✔ 링크를 올렸어요! 친구에게 ③에서 [들어가기]를 누르라고 알려 주세요.");
   } catch(e){ err.textContent = errMsg(e); }
   finally { b.disabled = false; }
 });
@@ -1682,6 +1727,15 @@ $("#wipeAll").addEventListener("click", async () => {
   if (prompt("정말 지우려면 '삭제' 라고 입력하세요.") !== "삭제") return;
   try { await rpc("booth_admin_wipe",{ p_pw:teacherPw }); await loadAll(); loadLog(); toast("완전히 삭제했어요."); } catch(e){ toast(errMsg(e)); }
 });
+$("#resetSeats").addEventListener("click", async () => {
+  if (!confirm("1부·2부 모든 자리의 이름을 지울까요?\n(변경 기록은 남아서 되돌릴 수 있어요)")) return;
+  try {
+    await rpc("booth_admin_reset",{ p_pw:teacherPw });
+    Object.keys(slots).forEach(k => slots[k] = Object.assign({}, slots[k], { name:null, owner_hash:null }));
+    editing = null; render(); toast("🔄 자리를 초기화했어요. 이제 선착순으로 쓰면 돼요!"); loadAll(); loadLog();
+  } catch(e){ toast(errMsg(e)); }
+});
+$("#optLock2").addEventListener("change", e => { $("#optLock").checked = e.target.checked; saveSettings(); });
 $("#optVote").addEventListener("change", async e => {
   try { const v = await rpc("booth_admin_votes_open",{ p_pw:teacherPw, p_open:e.target.checked }); settings.votes_open = v; render(); toast(v ? "❤ 투표를 열었어요." : "❤ 투표를 마감했어요."); }
   catch(err){ toast(errMsg(err)); render(); }
@@ -1705,7 +1759,13 @@ async function loadAll(){
     sb.from("booth_slots").select("shift,table_no,seat,name,owner_hash,updated_at"),
     sb.from("booth_settings").select("*").eq("id",1).maybeSingle()
   ]);
-  if (a.error){ setConn(false, "연결 안 됨"); return; }
+  if (a.error){
+    setConn(false, "연결 안 됨");
+    $("#readErr").hidden = false;
+    $("#readErr").textContent = "⚠ 자리 정보를 읽지 못했어요: " + (a.error.message || "") + " — 선생님: Supabase에서 setup_all.sql 을 다시 실행해 주세요.";
+    return;
+  }
+  $("#readErr").hidden = true;
   slots = {}; (a.data || []).forEach(r => slots[key(r.shift,r.table_no,r.seat)] = r);
   if (b.data) settings = Object.assign(settings, b.data);
   render();
